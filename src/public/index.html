@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIF Command Center | Day 9 Dashboard</title>
+    <style>
+        :root { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+        body { margin: 0; padding: 2rem; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 1000px; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 1rem; margin-bottom: 2rem; }
+        h1 { margin: 0; font-size: 1.5rem; color: #38bdf8; }
+        .badge { background: #065f46; color: #34d399; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: bold; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        h2 { margin-top: 0; font-size: 1.1rem; color: #e2e8f0; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.875rem; }
+        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #334155; }
+        th { color: #94a3b8; }
+        button { background: #ef4444; color: white; border: none; padding: 0.375rem 0.75rem; border-radius: 0.25rem; cursor: pointer; font-weight: bold; }
+        button:hover { background: #dc2626; }
+        .status-pill { background: #b45309; color: #fbbf24; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ AIF Command Center <span style="font-size: 0.8rem; color: #94a3b8;">(Day 9 Operations)</span></h1>
+            <div class="badge">SYSTEM ONLINE</div>
+        </header>
+
+        <div class="card">
+            <h2>Active Escrow Holds (Awaiting Human Verification)</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Transaction ID</th>
+                        <th>Payload Summary</th>
+                        <th>Status</th>
+                        <th>Emergency Action</th>
+                    </tr>
+                </thead>
+                <tbody id="escrowTableBody">
+                    <tr><td colspan="4" style="text-align: center; color: #94a3b8;">Loading active escrow holds...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function fetchEscrowStatus() {
+            try {
+                const res = await fetch('http://localhost:3000/ucp/v1/escrow/active');
+                const data = await res.json();
+                const tbody = document.getElementById('escrowTableBody');
+                tbody.innerHTML = '';
+
+                if (!data.holds || data.holds.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #94a3b8;">No active escrow holds right now. Trigger a checkout test!</td></tr>';
+                    return;
+                }
+
+                data.holds.forEach(hold => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><code>${hold.id}</code></td>
+                        <td>${JSON.stringify(hold.payload)}</td>
+                        <td><span class="status-pill">PENDING</span></td>
+                        <td><button onclick="triggerUndo('${hold.id}')">Abort / Undo</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error("Failed to fetch escrow holds:", err);
+            }
+        }
+
+        async function triggerUndo(id) {
+            if(!confirm(`Are you sure you want to abort transaction ${id}?`)) return;
+            try {
+                const res = await fetch(`http://localhost:3000/ucp/v1/undo/${id}`, { method: 'POST' });
+                const result = await res.json();
+                alert(result.message || "Processed");
+                fetchEscrowStatus();
+            } catch (err) {
+                alert("Failed to execute emergency override.");
+            }
+        }
+
+        setInterval(fetchEscrowStatus, 2000);
+        fetchEscrowStatus();
+    </script>
+</body>
+</html>
