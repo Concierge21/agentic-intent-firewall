@@ -1,0 +1,7 @@
+{"timestamp":"2026-09-17T18:00:33.850Z","method":"POST","endpoint":"/ucp/v1/checkout","intentToken":"MISSING","userAgent":"AuditTestAgent/1.0","statusCode":428,"responseTimeMs":33}
+{"timestamp":"2026-09-18T16:44:40.139Z","method":"POST","endpoint":"/ucp/v1/checkout","intentToken":"PRESENT","userAgent":"TestAgent/1.0","statusCode":403,"responseTimeMs":20}
+{"timestamp":"2026-09-18T16:45:29.474Z","method":"POST","endpoint":"/ucp/v1/checkout","intentToken":"PRESENT","userAgent":"TestAgent/1.0","statusCode":202,"responseTimeMs":3}
+{"timestamp":"2026-09-18T16:46:21.280Z","method":"POST","endpoint":"/ucp/v1/checkout","intentToken":"PRESENT","userAgent":"TestAgent/1.0","statusCode":202,"responseTimeMs":2}
+{"timestamp":"2026-09-18T16:46:49.202Z","method":"POST","endpoint":"/ucp/v1/undo/txn_1789749981278_9511551b","intentToken":"MISSING","userAgent":"curl/8.21.0","statusCode":404,"responseTimeMs":4}
+{"timestamp":"2026-09-18T16:49:42.268Z","method":"POST","endpoint":"/ucp/v1/checkout","intentToken":"PRESENT","userAgent":"TestAgent/1.0","statusCode":202,"responseTimeMs":3}
+{"timestamp":"2026-09-18T16:50:04.945Z","method":"POST","endpoint":"/ucp/v1/undo/txn_1789750182266_573935e1","intentToken":"MISSING","userAgent":"curl/8.21.0","statusCode":404,"responseTimeMs":12}

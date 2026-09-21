@@ -2,8 +2,9 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
-import path from 'path'; // <-- DAY 9 ADDED: Importing path
+import path from 'path'; 
 import { logAuditEvent } from './services/auditLogger'; 
+import { riskScoringMiddleware } from './middleware/riskEngine'; // <-- DAY 10 ADDED: Importing the risk engine
 
 dotenv.config();
 
@@ -13,18 +14,17 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-// --- DAY 9 ADDED: Serve the frontend dashboard from the public folder ---
 app.use(express.static(path.join(__dirname, '../public')));
 
-// In-memory escrow store
 const escrowStore: { [key: string]: { timeoutId: NodeJS.Timeout; payload: any } } = {};
 
 app.get('/aif/health', (req: Request, res: Response) => {
-  res.status(200).json({ status: 'active', firewall: 'Agentic Intent & Liability Firewall (Day 9)', version: '0.9.0' });
+  res.status(200).json({ status: 'active', firewall: 'Agentic Intent & Liability Firewall (Day 10)', version: '1.0.0' });
 });
 
-// Unified Checkout Route: Challenge Check + Escrow Hold
-app.post('/ucp/v1/checkout', (req: Request, res: Response) => {
+// Unified Checkout Route: Challenge Check + Risk Engine + Escrow Hold
+// <-- DAY 10 ADDED: riskScoringMiddleware inserted into the route definition below
+app.post('/ucp/v1/checkout', riskScoringMiddleware, (req: Request, res: Response) => {
   const incomingToken = req.headers['x-aif-intent-token'] as string;
 
   if (!incomingToken) {
@@ -43,7 +43,6 @@ app.post('/ucp/v1/checkout', (req: Request, res: Response) => {
   const transactionId = `txn_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
   console.log(`[Escrow Hold] Transaction ${transactionId} created. Holding for 30 seconds...`);
 
-  // Log the Escrow Event
   logAuditEvent({
       eventType: 'CHECKOUT_ESCROWED',
       transactionId: transactionId,
@@ -54,7 +53,6 @@ app.post('/ucp/v1/checkout', (req: Request, res: Response) => {
   const timeoutId = setTimeout(() => {
     console.log(`[Escrow Executed] Timer expired for ${transactionId}. Executing upstream transaction.`);
     
-    // Log the Execution Event
     logAuditEvent({
         eventType: 'TRANSACTION_EXECUTED',
         transactionId: transactionId
@@ -74,7 +72,6 @@ app.post('/ucp/v1/checkout', (req: Request, res: Response) => {
   });
 });
 
-// Human Override Undo Route
 app.post('/ucp/v1/undo/:id', (req: Request, res: Response) => {
   const id = req.params.id as string;
   const transaction = escrowStore[id];
@@ -88,7 +85,6 @@ app.post('/ucp/v1/undo/:id', (req: Request, res: Response) => {
 
   console.log(`[Human Override] Transaction ${id} successfully cancelled and aborted.`);
 
-  // Log the Abort Event
   logAuditEvent({
       eventType: 'TRANSACTION_ABORTED',
       transactionId: id
@@ -100,7 +96,6 @@ app.post('/ucp/v1/undo/:id', (req: Request, res: Response) => {
   });
 });
 
-// --- DAY 9 ADDED: Dashboard Endpoint for Active Escrows ---
 app.get('/ucp/v1/escrow/active', (req: Request, res: Response) => {
   const activeHolds = Object.keys(escrowStore).map(id => ({
     id,
@@ -110,5 +105,5 @@ app.get('/ucp/v1/escrow/active', (req: Request, res: Response) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Agentic Intent & Liability Firewall (Day 9) running on port ${PORT}`);
+  console.log(`Agentic Intent & Liability Firewall (Day 10) running on port ${PORT}`);
 });

@@ -1,0 +1,14 @@
+{
+  "thresholds": {
+    "medium": 30,
+    "high": 50
+  },
+  "rules": {
+    "highRiskSkus": ["SKU-999", "SKU-RESTRICTED-01"],
+    "maxQuantityThreshold": 5
+  },
+  "weights": {
+    "highRiskSku": 30,
+    "excessQuantity": 30
+  }
+}
