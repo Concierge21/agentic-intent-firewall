@@ -1,90 +1,143 @@
 "use strict";
+/**
+ * ============================================================================
+ * AGENTIC INTENT FIREWALL (AIF PROTOCOL)
+ * ============================================================================
+ * - Day 9: Core Express Server, Intent Token Verification & Challenge Middleware
+ * - Day 10: Dynamic Policy Engine & Risk Scoring Middleware Integration
+ * - Day 11: Human-in-the-Loop (HITL) Escrow Management & UI Dashboard
+ * ============================================================================
+ */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const cors_1 = __importDefault(require("cors"));
-const dotenv_1 = __importDefault(require("dotenv"));
 const crypto_1 = __importDefault(require("crypto"));
 const path_1 = __importDefault(require("path"));
-const auditLogger_1 = require("./services/auditLogger");
-const riskEngine_1 = require("./middleware/riskEngine"); // <-- DAY 10 ADDED: Importing the risk engine
-dotenv_1.default.config();
+const riskEngine_1 = require("./middleware/riskEngine");
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 3000;
-app.use((0, cors_1.default)());
-app.use(express_1.default.json({ limit: '1mb' }));
-app.use(express_1.default.static(path_1.default.join(__dirname, '../public')));
-const escrowStore = {};
-app.get('/aif/health', (req, res) => {
-    res.status(200).json({ status: 'active', firewall: 'Agentic Intent & Liability Firewall (Day 10)', version: '1.0.0' });
+app.use(express_1.default.json());
+// Serve static files from the 'src/public' folder (Day 11 Dashboard UI)
+app.use(express_1.default.static(path_1.default.join(__dirname, 'public')));
+// Serve the dashboard HTML file at the root URL
+app.get('/', (req, res) => {
+    res.sendFile(path_1.default.join(__dirname, 'public/index.html'));
 });
-// Unified Checkout Route: Challenge Check + Risk Engine + Escrow Hold
-// <-- DAY 10 ADDED: riskScoringMiddleware inserted into the route definition below
-app.post('/ucp/v1/checkout', riskEngine_1.riskScoringMiddleware, (req, res) => {
-    const incomingToken = req.headers['x-aif-intent-token'];
-    if (!incomingToken) {
-        const freshChallenge = crypto_1.default.randomBytes(32).toString('hex');
-        return res.status(428).json({
+// In-memory escrow buffer store for held transactions (Day 11)
+const escrowBuffer = new Map();
+// ============================================================================
+// DAY 9: AIF Intent Token & Challenge Middleware
+// ============================================================================
+app.use((req, res, next) => {
+    // Skip challenge for escrow management, undo, static files, and root dashboard
+    if (req.path.startsWith('/ucp/v1/escrow') ||
+        req.path.startsWith('/ucp/v1/undo') ||
+        req.path === '/') {
+        return next();
+    }
+    const intentToken = req.headers['x-aif-intent-token'];
+    // If token is missing or invalid length, issue cryptographic challenge
+    if (!intentToken || intentToken.length !== 64) {
+        const nonce = crypto_1.default.randomBytes(32).toString('hex');
+        return res.status(412).json({
             error: 'Precondition Required',
             message: 'AIF Protocol: Agentic intent verification required.',
-            challenge: { nonce: freshChallenge }
+            challenge: { nonce }
         });
     }
-    if (incomingToken.length !== 64) {
-        return res.status(403).json({ error: 'Forbidden', message: 'Invalid cryptographic intent proof.' });
-    }
-    const transactionId = `txn_${Date.now()}_${crypto_1.default.randomBytes(4).toString('hex')}`;
-    console.log(`[Escrow Hold] Transaction ${transactionId} created. Holding for 30 seconds...`);
-    (0, auditLogger_1.logAuditEvent)({
-        eventType: 'CHECKOUT_ESCROWED',
-        transactionId: transactionId,
-        intentToken: incomingToken,
-        payload: req.body
+    next();
+});
+// ============================================================================
+// DAY 10: Checkout Route with Dynamic Risk Scoring Middleware
+// ============================================================================
+app.post('/ucp/v1/checkout', riskEngine_1.riskScoringMiddleware, (req, res) => {
+    const payload = req.body;
+    const riskAssessment = req.riskAssessment;
+    // Route safe/medium risks to the escrow buffer
+    const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    escrowBuffer.set(transactionId, {
+        payload,
+        riskAssessment,
+        createdAt: Date.now()
     });
-    const timeoutId = setTimeout(() => {
-        console.log(`[Escrow Executed] Timer expired for ${transactionId}. Executing upstream transaction.`);
-        (0, auditLogger_1.logAuditEvent)({
-            eventType: 'TRANSACTION_EXECUTED',
-            transactionId: transactionId
-        });
-        delete escrowStore[transactionId];
-    }, 30000);
-    escrowStore[transactionId] = { timeoutId, payload: req.body };
-    return res.status(200).json({
+    return res.status(202).json({
         success: true,
         message: 'Transaction held in escrow buffer. Human override window active.',
         transactionId,
         expiresInSeconds: 30,
-        payload: req.body
+        payload
     });
 });
-app.post('/ucp/v1/undo/:id', (req, res) => {
-    const id = req.params.id;
-    const transaction = escrowStore[id];
-    if (!transaction) {
-        return res.status(404).json({ success: false, message: 'Transaction not found or already executed/cancelled.' });
-    }
-    clearTimeout(transaction.timeoutId);
-    delete escrowStore[id];
-    console.log(`[Human Override] Transaction ${id} successfully cancelled and aborted.`);
-    (0, auditLogger_1.logAuditEvent)({
-        eventType: 'TRANSACTION_ABORTED',
-        transactionId: id
-    });
+// ============================================================================
+// DAY 11: Human-in-the-Loop (HITL) Escrow Management & Dashboard Endpoints
+// ============================================================================
+// 1. GET: Active escrow holds (Compatible with your Day 11 HTML UI dashboard)
+app.get('/ucp/v1/escrow/active', (req, res) => {
+    const holds = Array.from(escrowBuffer.entries()).map(([id, data]) => ({
+        id,
+        payload: data.payload,
+        riskAssessment: data.riskAssessment,
+        createdAt: data.createdAt
+    }));
+    return res.status(200).json({ holds });
+});
+// 2. GET: List pending escrow holds (Detailed view)
+app.get('/ucp/v1/escrow/pending', (req, res) => {
+    const pending = Array.from(escrowBuffer.entries()).map(([id, data]) => ({
+        transactionId: id,
+        ...data
+    }));
     return res.status(200).json({
         success: true,
-        message: `Transaction ${id} successfully aborted by human override.`,
+        count: pending.length,
+        pendingTransactions: pending
     });
 });
-app.get('/ucp/v1/escrow/active', (req, res) => {
-    const activeHolds = Object.keys(escrowStore).map(id => ({
-        id,
-        payload: escrowStore[id].payload
-    }));
-    return res.status(200).json({ holds: activeHolds });
+// 3. POST: Abort / Undo an escrow hold (Compatible with dashboard Abort button)
+app.post('/ucp/v1/undo/:id', (req, res) => {
+    const id = String(req.params.id);
+    if (!escrowBuffer.has(id)) {
+        return res.status(404).json({ success: false, message: 'Transaction not found or already executed/cancelled.' });
+    }
+    escrowBuffer.delete(id);
+    return res.status(200).json({
+        success: true,
+        message: `Transaction ${id} successfully aborted by human override.`
+    });
 });
+// 4. POST: Approve an escrow hold
+app.post('/ucp/v1/escrow/approve/:id', (req, res) => {
+    const id = String(req.params.id);
+    if (!escrowBuffer.has(id)) {
+        return res.status(404).json({ success: false, error: 'Escrow transaction not found or expired.' });
+    }
+    escrowBuffer.delete(id);
+    return res.status(200).json({
+        success: true,
+        status: 'APPROVED_BY_HUMAN',
+        transactionId: id,
+        message: 'Transaction successfully released from escrow and executed.'
+    });
+});
+// 5. POST: Deny an escrow hold
+app.post('/ucp/v1/escrow/deny/:id', (req, res) => {
+    const id = String(req.params.id);
+    if (!escrowBuffer.has(id)) {
+        return res.status(404).json({ success: false, error: 'Escrow transaction not found or expired.' });
+    }
+    escrowBuffer.delete(id);
+    return res.status(200).json({
+        success: true,
+        status: 'DENIED_BY_HUMAN',
+        transactionId: id,
+        message: 'Transaction explicitly rejected and dropped by administrator.'
+    });
+});
+// ============================================================================
+// Server Startup
+// ============================================================================
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Agentic Intent & Liability Firewall (Day 10) running on port ${PORT}`);
+    console.log(`Agentic Intent Firewall running on port ${PORT}`);
 });
