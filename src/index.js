@@ -6,6 +6,7 @@
  * - Day 9: Core Express Server, Intent Token Verification & Challenge Middleware
  * - Day 10: Dynamic Policy Engine & Risk Scoring Middleware Integration
  * - Day 11: Human-in-the-Loop (HITL) Escrow Management & UI Dashboard
+ * - Day 12: Strict Schema Validation & Payload Contracts (Zod Input Shield)
  * ============================================================================
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
@@ -15,10 +16,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const crypto_1 = __importDefault(require("crypto"));
 const path_1 = __importDefault(require("path"));
+// Import Middleware Security Layers
 const riskEngine_1 = require("./middleware/riskEngine");
+const validatePayload_1 = require("./middleware/validatePayload");
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
-// Serve static files from the 'src/public' folder (Day 11 Dashboard UI)
+// Serve static files from the 'public' folder (Day 11 Dashboard UI)
 app.use(express_1.default.static(path_1.default.join(__dirname, 'public')));
 // Serve the dashboard HTML file at the root URL
 app.get('/', (req, res) => {
@@ -49,9 +52,12 @@ app.use((req, res, next) => {
     next();
 });
 // ============================================================================
-// DAY 10: Checkout Route with Dynamic Risk Scoring Middleware
+// DAY 10 & DAY 12: Checkout Route (Zod Schema Validation + Risk Engine)
+// Pipeline:
+// 1. validateCheckoutPayload -> Day 12 Schema Contract Gate (Blocks bad payloads early)
+// 2. riskScoringMiddleware   -> Day 10 Threat Scoring & Escrow hold logic
 // ============================================================================
-app.post('/ucp/v1/checkout', riskEngine_1.riskScoringMiddleware, (req, res) => {
+app.post('/ucp/v1/checkout', validatePayload_1.validateCheckoutPayload, riskEngine_1.riskScoringMiddleware, (req, res) => {
     const payload = req.body;
     const riskAssessment = req.riskAssessment;
     // Route safe/medium risks to the escrow buffer
@@ -72,7 +78,7 @@ app.post('/ucp/v1/checkout', riskEngine_1.riskScoringMiddleware, (req, res) => {
 // ============================================================================
 // DAY 11: Human-in-the-Loop (HITL) Escrow Management & Dashboard Endpoints
 // ============================================================================
-// 1. GET: Active escrow holds (Compatible with your Day 11 HTML UI dashboard)
+// 1. GET: Active escrow holds (Compatible with Day 11 HTML UI dashboard)
 app.get('/ucp/v1/escrow/active', (req, res) => {
     const holds = Array.from(escrowBuffer.entries()).map(([id, data]) => ({
         id,
@@ -139,5 +145,5 @@ app.post('/ucp/v1/escrow/deny/:id', (req, res) => {
 // ============================================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Agentic Intent Firewall running on port ${PORT}`);
+    console.log(`🛡️ Agentic Intent Firewall running on port ${PORT}`);
 });
