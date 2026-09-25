@@ -5,7 +5,7 @@
   },
   "rules": {
     "highRiskSkus": ["SKU-999", "SKU-RESTRICTED-01"],
-    "maxQuantityThreshold": 5
+    "maxQuantityThreshold": 2
   },
   "weights": {
     "highRiskSku": 30,

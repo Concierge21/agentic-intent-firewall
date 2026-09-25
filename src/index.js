@@ -8,6 +8,7 @@
  * - Day 11: Human-in-the-Loop (HITL) Escrow Management & UI Dashboard
  * - Day 12: Strict Schema Validation & Payload Contracts (Zod Input Shield)
  * - Day 13: Velocity Guard, Rate Limiter & Circuit Breaker Fault Tolerance
+ * - Day 14: Dynamic Hot-Reloading Policy Engine
  * ============================================================================
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
@@ -22,6 +23,10 @@ const riskEngine_1 = require("./middleware/riskEngine");
 const validatePayload_1 = require("./middleware/validatePayload");
 const rateLimiter_1 = require("./middleware/rateLimiter");
 const circuitBreaker_1 = require("./middleware/circuitBreaker");
+const policyEngine_1 = require("./middleware/policyEngine");
+// Boot the Day 14 Dynamic Policy Engine before starting the server
+(0, policyEngine_1.loadPolicy)();
+(0, policyEngine_1.watchPolicy)();
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 // Serve static files from the 'public' folder (Day 11 Dashboard UI)
@@ -55,12 +60,11 @@ app.use((req, res, next) => {
     next();
 });
 // ============================================================================
-// DAY 10, 12 & 13: Checkout Route (Circuit Breaker + Rate Limiter + Zod + Risk Engine)
-// Pipeline:
-// 1. circuitBreaker        -> Day 13 Fault-tolerance guard (Trips open on cascading errors)
-// 2. rateLimiter           -> Day 13 Sliding-window velocity check (Blocks infinite loops)
-// 3. validateCheckoutPayload -> Day 12 Schema Contract Gate (Blocks malformed payloads)
-// 4. riskScoringMiddleware   -> Day 10 Threat Scoring & Escrow hold logic
+// DAY 10, 12, 13 & 14: Checkout Route Pipeline
+// 1. circuitBreaker          -> Fault-tolerance guard (Trips open on cascading errors)
+// 2. rateLimiter             -> Sliding-window velocity check (Blocks infinite loops)
+// 3. validateCheckoutPayload -> Schema Contract Gate (Blocks malformed payloads)
+// 4. riskScoringMiddleware   -> Threat Scoring (Now powered by Day 14 Hot-Reloading Policy)
 // ============================================================================
 app.post('/ucp/v1/checkout', circuitBreaker_1.circuitBreaker, rateLimiter_1.rateLimiter, validatePayload_1.validateCheckoutPayload, riskEngine_1.riskScoringMiddleware, (req, res) => {
     const payload = req.body;

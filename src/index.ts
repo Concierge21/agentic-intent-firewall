@@ -7,6 +7,7 @@
  * - Day 11: Human-in-the-Loop (HITL) Escrow Management & UI Dashboard
  * - Day 12: Strict Schema Validation & Payload Contracts (Zod Input Shield)
  * - Day 13: Velocity Guard, Rate Limiter & Circuit Breaker Fault Tolerance
+ * - Day 14: Dynamic Hot-Reloading Policy Engine
  * ============================================================================
  */
 
@@ -19,6 +20,11 @@ import { riskScoringMiddleware } from './middleware/riskEngine';
 import { validateCheckoutPayload } from './middleware/validatePayload';
 import { rateLimiter } from './middleware/rateLimiter';
 import { circuitBreaker } from './middleware/circuitBreaker';
+import { loadPolicy, watchPolicy } from './middleware/policyEngine';
+
+// Boot the Day 14 Dynamic Policy Engine before starting the server
+loadPolicy();
+watchPolicy();
 
 const app = express();
 app.use(express.json());
@@ -63,12 +69,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // ============================================================================
-// DAY 10, 12 & 13: Checkout Route (Circuit Breaker + Rate Limiter + Zod + Risk Engine)
-// Pipeline:
-// 1. circuitBreaker        -> Day 13 Fault-tolerance guard (Trips open on cascading errors)
-// 2. rateLimiter           -> Day 13 Sliding-window velocity check (Blocks infinite loops)
-// 3. validateCheckoutPayload -> Day 12 Schema Contract Gate (Blocks malformed payloads)
-// 4. riskScoringMiddleware   -> Day 10 Threat Scoring & Escrow hold logic
+// DAY 10, 12, 13 & 14: Checkout Route Pipeline
+// 1. circuitBreaker          -> Fault-tolerance guard (Trips open on cascading errors)
+// 2. rateLimiter             -> Sliding-window velocity check (Blocks infinite loops)
+// 3. validateCheckoutPayload -> Schema Contract Gate (Blocks malformed payloads)
+// 4. riskScoringMiddleware   -> Threat Scoring (Now powered by Day 14 Hot-Reloading Policy)
 // ============================================================================
 app.post('/ucp/v1/checkout', circuitBreaker, rateLimiter, validateCheckoutPayload, riskScoringMiddleware, (req: Request, res: Response) => {
   const payload = req.body;
