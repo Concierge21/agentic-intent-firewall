@@ -1,0 +1,12 @@
+{
+  "sk_live_sales_8f92a1b3": {
+    "id": "agent_sales_01",
+    "name": "SalesBot-X",
+    "role": "checkout_agent"
+  },
+  "sk_live_inventory_4c55d6e7": {
+    "id": "agent_inventory_02",
+    "name": "Inventory-Agent",
+    "role": "stock_manager"
+  }
+}

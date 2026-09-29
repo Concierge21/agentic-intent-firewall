@@ -7,7 +7,8 @@
  * - Day 11: Human-in-the-Loop (HITL) Escrow Management & UI Dashboard
  * - Day 12: Strict Schema Validation & Payload Contracts (Zod Input Shield)
  * - Day 13: Velocity Guard, Rate Limiter & Circuit Breaker Fault Tolerance
- * - Day 14: Dynamic Hot-Reloading Policy Engine
+ * - Day 14: Dynamic Hot-Reloading Policy Engine & Cryptographic Audit Chaining
+ * - Day 15: Formal Programmatic Escrow State Machine & TTL Expiration Engine
  * ============================================================================
  */
 
@@ -22,12 +23,25 @@ import { rateLimiter } from './middleware/rateLimiter';
 import { circuitBreaker } from './middleware/circuitBreaker';
 import { loadPolicy, watchPolicy } from './middleware/policyEngine';
 
+// Import Services (Cryptographic Logger & Day 15 Escrow State Machine)
+import { logAuditEvent } from './services/auditLogger';
+import { escrowManager, EscrowTransaction } from './services/escrowMachine';
+
 // Boot the Day 14 Dynamic Policy Engine before starting the server
 loadPolicy();
 watchPolicy();
 
 const app = express();
 app.use(express.json());
+
+// 🔎 DEBUG MIDDLEWARE: Log every incoming request to the terminal
+app.use((req: Request, res: Response, next: NextFunction) => {
+  console.log(`📥 [Incoming Request] ${req.method} ${req.url}`);
+  if (Object.keys(req.body || {}).length > 0) {
+    console.log(`   Payload:`, JSON.stringify(req.body));
+  }
+  next();
+});
 
 // Serve static files from the 'public' folder (Day 11 Dashboard UI)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -36,9 +50,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req: Request, res: Response) => {
   res.sendFile(path.join(__dirname, 'public/index.html'));
 });
-
-// In-memory escrow buffer store for held transactions (Day 11)
-const escrowBuffer = new Map<string, any>();
 
 // ============================================================================
 // DAY 9: AIF Intent Token & Challenge Middleware
@@ -70,22 +81,22 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // ============================================================================
 // DAY 10, 12, 13 & 14: Checkout Route Pipeline
-// 1. circuitBreaker          -> Fault-tolerance guard (Trips open on cascading errors)
-// 2. rateLimiter             -> Sliding-window velocity check (Blocks infinite loops)
-// 3. validateCheckoutPayload -> Schema Contract Gate (Blocks malformed payloads)
-// 4. riskScoringMiddleware   -> Threat Scoring (Now powered by Day 14 Hot-Reloading Policy)
 // ============================================================================
 app.post('/ucp/v1/checkout', circuitBreaker, rateLimiter, validateCheckoutPayload, riskScoringMiddleware, (req: Request, res: Response) => {
   const payload = req.body;
   const riskAssessment = (req as any).riskAssessment;
 
-  // Route safe/medium risks to the escrow buffer
   const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   
-  escrowBuffer.set(transactionId, {
-    payload,
+  // DAY 15: Create state machine entry with 30-second TTL timer
+  escrowManager.create(transactionId, payload, riskAssessment, 30);
+
+  // DAY 14: Cryptographically log the Escrow Hold
+  logAuditEvent({
+    eventType: 'CHECKOUT_ESCROWED',
+    transactionId,
     riskAssessment,
-    createdAt: Date.now()
+    payload
   });
 
   return res.status(202).json({
@@ -98,16 +109,17 @@ app.post('/ucp/v1/checkout', circuitBreaker, rateLimiter, validateCheckoutPayloa
 });
 
 // ============================================================================
-// DAY 11: Human-in-the-Loop (HITL) Escrow Management & Dashboard Endpoints
+// DAY 11, 14 & 15: Human-in-the-Loop (HITL) State Machine Escrow Endpoints
 // ============================================================================
 
 // 1. GET: Active escrow holds (Compatible with Day 11 HTML UI dashboard)
 app.get('/ucp/v1/escrow/active', (req: Request, res: Response) => {
-  const holds = Array.from(escrowBuffer.entries()).map(([id, data]) => ({
-    id,
-    payload: data.payload,
-    riskAssessment: data.riskAssessment,
-    createdAt: data.createdAt
+  const activeHolds = escrowManager.getAll();
+  const holds = activeHolds.map((txn: EscrowTransaction) => ({
+    id: txn.id,
+    payload: txn.payload,
+    riskAssessment: txn.riskAssessment,
+    createdAt: txn.createdAt
   }));
 
   return res.status(200).json({ holds });
@@ -115,10 +127,7 @@ app.get('/ucp/v1/escrow/active', (req: Request, res: Response) => {
 
 // 2. GET: List pending escrow holds (Detailed view)
 app.get('/ucp/v1/escrow/pending', (req: Request, res: Response) => {
-  const pending = Array.from(escrowBuffer.entries()).map(([id, data]) => ({
-    transactionId: id,
-    ...data
-  }));
+  const pending = escrowManager.getAll();
   
   return res.status(200).json({
     success: true,
@@ -130,11 +139,21 @@ app.get('/ucp/v1/escrow/pending', (req: Request, res: Response) => {
 // 3. POST: Abort / Undo an escrow hold (Compatible with dashboard Abort button)
 app.post('/ucp/v1/undo/:id', (req: Request, res: Response) => {
   const id = String(req.params.id);
-  if (!escrowBuffer.has(id)) {
-    return res.status(404).json({ success: false, message: 'Transaction not found or already executed/cancelled.' });
+  const txn = escrowManager.transition(id, 'ABORTED');
+
+  if (!txn) {
+    return res.status(404).json({ success: false, message: 'Transaction not found or already executed/expired.' });
   }
 
-  escrowBuffer.delete(id);
+  // DAY 14: Cryptographically log the Undo action
+  logAuditEvent({
+    eventType: 'TRANSACTION_ABORTED',
+    transactionId: id,
+    riskAssessment: txn.riskAssessment,
+    payload: txn.payload
+  });
+
+  console.log(`🛑 [Escrow State Machine] Transaction ${id} ABORTED via UI override.`);
 
   return res.status(200).json({
     success: true,
@@ -145,11 +164,21 @@ app.post('/ucp/v1/undo/:id', (req: Request, res: Response) => {
 // 4. POST: Approve an escrow hold
 app.post('/ucp/v1/escrow/approve/:id', (req: Request, res: Response) => {
   const id = String(req.params.id);
-  if (!escrowBuffer.has(id)) {
-    return res.status(404).json({ success: false, error: 'Escrow transaction not found or expired.' });
+  const txn = escrowManager.transition(id, 'EXECUTED');
+
+  if (!txn) {
+    return res.status(404).json({ success: false, error: 'Escrow transaction not found or already expired/processed.' });
   }
 
-  escrowBuffer.delete(id);
+  // DAY 14: Cryptographically log the Approval
+  logAuditEvent({
+    eventType: 'TRANSACTION_EXECUTED',
+    transactionId: id,
+    riskAssessment: txn.riskAssessment,
+    payload: txn.payload
+  });
+
+  console.log(`✅ [Escrow State Machine] Transaction ${id} APPROVED and executed via UI.`);
 
   return res.status(200).json({
     success: true,
@@ -162,11 +191,21 @@ app.post('/ucp/v1/escrow/approve/:id', (req: Request, res: Response) => {
 // 5. POST: Deny an escrow hold
 app.post('/ucp/v1/escrow/deny/:id', (req: Request, res: Response) => {
   const id = String(req.params.id);
-  if (!escrowBuffer.has(id)) {
-    return res.status(404).json({ success: false, error: 'Escrow transaction not found or expired.' });
+  const txn = escrowManager.transition(id, 'DENIED');
+
+  if (!txn) {
+    return res.status(404).json({ success: false, error: 'Escrow transaction not found or already expired/processed.' });
   }
 
-  escrowBuffer.delete(id);
+  // DAY 14: Cryptographically log the Denial
+  logAuditEvent({
+    eventType: 'CHECKOUT_BLOCKED',
+    transactionId: id,
+    riskAssessment: txn.riskAssessment,
+    payload: txn.payload
+  });
+
+  console.log(`❌ [Escrow State Machine] Transaction ${id} DENIED via UI.`);
 
   return res.status(200).json({
     success: true,

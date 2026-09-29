@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIF Command Center | Day 9 Dashboard</title>
+    <title>AIF Command Center | Day 15 Dashboard</title>
     <style>
         :root { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
         body { margin: 0; padding: 2rem; display: flex; flex-direction: column; align-items: center; }
@@ -16,15 +16,19 @@
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.875rem; }
         th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #334155; }
         th { color: #94a3b8; }
-        button { background: #ef4444; color: white; border: none; padding: 0.375rem 0.75rem; border-radius: 0.25rem; cursor: pointer; font-weight: bold; }
-        button:hover { background: #dc2626; }
+        .action-buttons { display: flex; gap: 0.5rem; }
+        button { color: white; border: none; padding: 0.375rem 0.75rem; border-radius: 0.25rem; cursor: pointer; font-weight: bold; }
+        .btn-approve { background: #10b981; }
+        .btn-approve:hover { background: #059669; }
+        .btn-deny { background: #ef4444; }
+        .btn-deny:hover { background: #dc2626; }
         .status-pill { background: #b45309; color: #fbbf24; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🛡️ AIF Command Center <span style="font-size: 0.8rem; color: #94a3b8;">(Day 9 Operations)</span></h1>
+            <h1>🛡️ AIF Command Center <span style="font-size: 0.8rem; color: #94a3b8;">(Day 15 Operations)</span></h1>
             <div class="badge">SYSTEM ONLINE</div>
         </header>
 
@@ -64,8 +68,13 @@
                     tr.innerHTML = `
                         <td><code>${hold.id}</code></td>
                         <td>${JSON.stringify(hold.payload)}</td>
-                        <td><span class="status-pill">PENDING</span></td>
-                        <td><button onclick="triggerUndo('${hold.id}')">Abort / Undo</button></td>
+                        <td><span class="status-pill">ESCROW_HOLD</span></td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-approve" onclick="triggerResolution('${hold.id}', 'approve')">Approve</button>
+                                <button class="btn-deny" onclick="triggerResolution('${hold.id}', 'deny')">Deny</button>
+                            </div>
+                        </td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -74,12 +83,12 @@
             }
         }
 
-        async function triggerUndo(id) {
-            if(!confirm(`Are you sure you want to abort transaction ${id}?`)) return;
+        async function triggerResolution(id, action) {
+            if(!confirm(`Are you sure you want to ${action.toUpperCase()} transaction ${id}?`)) return;
             try {
-                const res = await fetch(`http://localhost:3000/ucp/v1/undo/${id}`, { method: 'POST' });
+                const res = await fetch(`http://localhost:3000/ucp/v1/escrow/${action}/${id}`, { method: 'POST' });
                 const result = await res.json();
-                alert(result.message || "Processed");
+                alert(result.message || `Transaction ${action} processed.`);
                 fetchEscrowStatus();
             } catch (err) {
                 alert("Failed to execute emergency override.");

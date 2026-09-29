@@ -1,13 +1,26 @@
 {
   "name": "agentic-intent-firewall",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Enterprise-grade intent validation, velocity tracking, rate-limiting, and escrow state machine firewall for AI agent commerce (UCP/ACP).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
+    "build": "tsc",
+    "start": "tsc && node dist/index.js",
+    "dev": "node src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ai-agents",
+    "firewall",
+    "ucp",
+    "acp",
+    "security",
+    "escrow",
+    "rate-limiter",
+    "agentic-commerce"
+  ],
+  "author": "Kent Ramirez Mangilaya",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {

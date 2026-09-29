@@ -38,3 +38,42 @@ export const watchPolicy = () => {
     loadPolicy();
   });
 };
+
+// Automatically initialize loading and watching on boot
+loadPolicy();
+watchPolicy();
+
+// Policy Engine object containing the evaluate method required by server.ts
+export const policyEngine = {
+  evaluate(payload: any) {
+    let score = 0;
+    const triggeredRules: string[] = [];
+
+    const rules = activePolicy.rules || {};
+    const highRiskSkus = Array.isArray(rules.highRiskSkus) ? rules.highRiskSkus : ["SKU-999", "SKU-RESTRICTED-01"];
+    const maxQuantityThreshold = rules.maxQuantityThreshold ?? 5;
+
+    if (payload && payload.items && Array.isArray(payload.items)) {
+      for (const item of payload.items) {
+        if (highRiskSkus.includes(item.sku)) {
+          score += activePolicy.weights?.highRiskSku || 30;
+          triggeredRules.push(`HIGH_RISK_SKU_${item.sku}`);
+        }
+
+        if (item.quantity > maxQuantityThreshold) {
+          score += activePolicy.weights?.excessQuantity || 30;
+          triggeredRules.push(`EXCESS_QUANTITY_${item.quantity}`);
+        }
+      }
+    }
+
+    const highThreshold = activePolicy.thresholds?.high || 50;
+    const decision = score >= highThreshold ? 'ESCROW' : 'ALLOW';
+
+    return {
+      decision,
+      score,
+      triggeredRules
+    };
+  }
+};
