@@ -1,20 +1,9 @@
-export type EscrowState = 'RECEIVED' | 'ESCROW_HOLD' | 'CLEARED' | 'ABORTED';
-export interface EscrowTransaction {
-    transactionId: string;
+export declare function storeHold(hold: any): Promise<void>;
+export declare function getAllHolds(): Promise<{
+    transactionId: any;
     payload: any;
-    assessment?: any;
-    expiresAt: number;
-    status: EscrowState;
-    createdAt?: number;
-}
-export declare const holdTransaction: (transactionId: string, payload: any, holdTimeMs?: number) => void;
-export declare const storeHold: (hold: {
-    transactionId: string;
-    payload: any;
-    assessment?: any;
-    status?: string;
-    createdAt?: number;
-}) => void;
-export declare const resolveTransaction: (transactionId: string, action: 'CLEAR' | 'ABORT') => boolean;
-export declare const getTransaction: (transactionId: string) => EscrowTransaction | undefined;
-export declare const getAllHolds: () => EscrowTransaction[];
+    assessment: any;
+    status: any;
+    createdAt: any;
+}[]>;
+export declare function resolveTransaction(transactionId: string, internalAction: string): Promise<boolean>;

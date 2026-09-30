@@ -1,58 +1,40 @@
-export type EscrowState = 'RECEIVED' | 'ESCROW_HOLD' | 'CLEARED' | 'ABORTED';
+import { getDB } from '../config/database';
 
-export interface EscrowTransaction {
-  transactionId: string;
-  payload: any;
-  assessment?: any;
-  expiresAt: number;
-  status: EscrowState;
-  createdAt?: number;
+export async function storeHold(hold: any) {
+  const db = await getDB();
+  await db.run(
+    `INSERT INTO holds (transactionId, payload, assessment, status, createdAt, agentName) VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      hold.transactionId,
+      JSON.stringify(hold.payload),
+      JSON.stringify(hold.assessment),
+      hold.status,
+      hold.createdAt,
+      hold.payload._agentName || 'Unknown Agent'
+    ]
+  );
 }
 
-const escrowBuffer = new Map<string, EscrowTransaction>();
+export async function getAllHolds() {
+  const db = await getDB();
+  const rows = await db.all(`SELECT * FROM holds`);
+  return rows.map((row: any) => ({
+    transactionId: row.transactionId,
+    payload: JSON.parse(row.payload),
+    assessment: JSON.parse(row.assessment),
+    status: row.status,
+    createdAt: row.createdAt
+  }));
+}
 
-export const holdTransaction = (transactionId: string, payload: any, holdTimeMs: number = 30000): void => {
-  escrowBuffer.set(transactionId, {
-    transactionId,
-    payload,
-    expiresAt: Date.now() + holdTimeMs,
-    status: 'ESCROW_HOLD',
-    createdAt: Date.now(),
-  });
-  console.log(`⏸️ [Escrow] Transaction ${transactionId} held in ESCROW_HOLD state.`);
-};
-
-// Compatibility wrapper for server.ts storeHold calls
-export const storeHold = (hold: { transactionId: string; payload: any; assessment?: any; status?: string; createdAt?: number }): void => {
-  escrowBuffer.set(hold.transactionId, {
-    transactionId: hold.transactionId,
-    payload: hold.payload,
-    assessment: hold.assessment,
-    expiresAt: Date.now() + 30000,
-    status: 'ESCROW_HOLD',
-    createdAt: hold.createdAt || Date.now(),
-  });
-  console.log(`⏸️ [Escrow] Transaction ${hold.transactionId} stored in ESCROW_HOLD state.`);
-};
-
-export const resolveTransaction = (transactionId: string, action: 'CLEAR' | 'ABORT'): boolean => {
-  const tx = escrowBuffer.get(transactionId);
+export async function resolveTransaction(transactionId: string, internalAction: string) {
+  const db = await getDB();
+  const newStatus = internalAction === 'CLEAR' ? 'APPROVED' : 'DENIED';
   
-  // Prevent modifying transactions that are already cleared, aborted, or missing
-  if (!tx || tx.status !== 'ESCROW_HOLD') {
-      console.log(`⚠️ [Escrow] Cannot ${action} transaction ${transactionId}. Current status: ${tx?.status || 'NOT_FOUND'}`);
-      return false;
-  }
-
-  tx.status = action === 'CLEAR' ? 'CLEARED' : 'ABORTED';
-  console.log(`✅ [Escrow] Transaction ${transactionId} transitioned to ${tx.status}.`);
-  return true;
-};
-
-export const getTransaction = (transactionId: string): EscrowTransaction | undefined => {
-  return escrowBuffer.get(transactionId);
-};
-
-export const getAllHolds = (): EscrowTransaction[] => {
-  return Array.from(escrowBuffer.values()).filter(tx => tx.status === 'ESCROW_HOLD');
-};
+  const result = await db.run(
+    `UPDATE holds SET status = ? WHERE transactionId = ?`,
+    [newStatus, transactionId]
+  );
+  
+  return result.changes !== undefined && result.changes > 0;
+}
