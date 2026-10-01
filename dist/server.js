@@ -8,6 +8,7 @@ const policyEngine_1 = require("./middleware/policyEngine");
 const escrowService_1 = require("./services/escrowService");
 const authMiddleware_1 = require("./middleware/authMiddleware");
 const database_1 = require("./config/database");
+const circuitBreaker_1 = require("./middleware/circuitBreaker");
 const path_1 = __importDefault(require("path"));
 const crypto_1 = __importDefault(require("crypto"));
 const app = (0, express_1.default)();
@@ -88,7 +89,7 @@ app.use((req, res, next) => {
     console.log(`\n📥 [${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
     next();
 });
-app.post('/api/checkout', authMiddleware_1.authenticateAgent, async (req, res) => {
+app.post('/api/checkout', authMiddleware_1.authenticateAgent, circuitBreaker_1.circuitBreakerMiddleware, async (req, res) => {
     const payload = req.body;
     const agent = req.agent;
     const assessment = policyEngine_1.policyEngine.evaluate(payload);
@@ -97,10 +98,14 @@ app.post('/api/checkout', authMiddleware_1.authenticateAgent, async (req, res) =
         const storedPayload = { ...payload, _agentName: agent.name };
         console.log(`❌ [SECURITY INTERCEPT] Decision: ESCROW | ID: ${transactionId}`);
         await (0, escrowService_1.storeHold)({ transactionId, payload: storedPayload, assessment, status: 'ESCROW_HOLD', createdAt: Date.now() });
+        // Day 20: Record the failure to trip the breaker if it happens too often
+        (0, circuitBreaker_1.recordFailure)(agent.name);
         await dispatchSecurityAlert(assessment, payload, agent);
     }
     else {
         console.log(`✅ [ALLOWED] Agent: ${agent.name} | Risk Score: ${assessment.score}`);
+        // Day 20: Reset the breaker on a successful, safe transaction
+        (0, circuitBreaker_1.resetBreaker)(agent.name);
     }
     res.json({ success: true, message: assessment.decision === 'ESCROW' ? 'Transaction held.' : 'Executed safely.', agent: agent.name, assessment });
 });
@@ -119,7 +124,6 @@ app.post('/ucp/v1/escrow/:action/:id', async (req, res) => {
     console.log(`🛡️ Transaction ${id} successfully ${action}d. Audit Hash: ${hash}`);
     if (internalAction === 'CLEAR') {
         console.log(`🚀 [Egress] Webhook dispatched to downstream CRM/Pipeline automation!`);
-        // fetch(DOWNSTREAM_PIPELINE_URL, { method: 'POST', body: JSON.stringify({ transactionId: id, status: 'APPROVED' }) });
     }
     res.json({ success: true, auditHash: hash });
 });
@@ -127,6 +131,6 @@ app.post('/ucp/v1/escrow/:action/:id', async (req, res) => {
 (0, database_1.initDB)().then(() => {
     app.listen(3000, () => {
         console.log('🚀 AIF Secured Gateway running on port 3000');
-        console.log('🔒 Day 19 Persistent SQLite Storage & Egress Dispatch Active');
+        console.log('🔒 Day 20 Agent Circuit Breaker Active');
     });
 });

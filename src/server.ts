@@ -3,6 +3,7 @@ import { policyEngine } from './middleware/policyEngine';
 import { getAllHolds, resolveTransaction, storeHold } from './services/escrowService';
 import { authenticateAgent } from './middleware/authMiddleware';
 import { initDB } from './config/database';
+import { circuitBreakerMiddleware, recordFailure, resetBreaker } from './middleware/circuitBreaker';
 import path from 'path';
 import crypto from 'crypto';
 
@@ -86,7 +87,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-app.post('/api/checkout', authenticateAgent, async (req: Request, res: Response) => {
+app.post('/api/checkout', authenticateAgent, circuitBreakerMiddleware, async (req: Request, res: Response) => {
   const payload = req.body;
   const agent = (req as any).agent;
   const assessment = policyEngine.evaluate(payload);
@@ -98,9 +99,15 @@ app.post('/api/checkout', authenticateAgent, async (req: Request, res: Response)
     console.log(`❌ [SECURITY INTERCEPT] Decision: ESCROW | ID: ${transactionId}`);
     
     await storeHold({ transactionId, payload: storedPayload, assessment, status: 'ESCROW_HOLD', createdAt: Date.now() });
+    
+    // Day 20: Record the failure to trip the breaker if it happens too often
+    recordFailure(agent.name);
     await dispatchSecurityAlert(assessment, payload, agent);
   } else {
     console.log(`✅ [ALLOWED] Agent: ${agent.name} | Risk Score: ${assessment.score}`);
+    
+    // Day 20: Reset the breaker on a successful, safe transaction
+    resetBreaker(agent.name);
   }
 
   res.json({ success: true, message: assessment.decision === 'ESCROW' ? 'Transaction held.' : 'Executed safely.', agent: agent.name, assessment });
@@ -124,7 +131,6 @@ app.post('/ucp/v1/escrow/:action/:id', async (req: Request, res: Response) => {
 
   if (internalAction === 'CLEAR') {
     console.log(`🚀 [Egress] Webhook dispatched to downstream CRM/Pipeline automation!`);
-    // fetch(DOWNSTREAM_PIPELINE_URL, { method: 'POST', body: JSON.stringify({ transactionId: id, status: 'APPROVED' }) });
   }
 
   res.json({ success: true, auditHash: hash });
@@ -134,6 +140,6 @@ app.post('/ucp/v1/escrow/:action/:id', async (req: Request, res: Response) => {
 initDB().then(() => {
   app.listen(3000, () => {
     console.log('🚀 AIF Secured Gateway running on port 3000');
-    console.log('🔒 Day 19 Persistent SQLite Storage & Egress Dispatch Active');
+    console.log('🔒 Day 20 Agent Circuit Breaker Active');
   });
 });
