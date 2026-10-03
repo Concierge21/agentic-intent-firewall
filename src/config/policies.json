@@ -1,20 +1,5 @@
 {
-  "rules": [
-    {
-      "id": "EXCESS_QUANTITY_100",
-      "metric": "quantity",
-      "operator": "greater_than",
-      "threshold": 10,
-      "action": "ESCROW",
-      "score": 50
-    },
-    {
-      "id": "HIGH_AMOUNT_CHECK",
-      "metric": "amount",
-      "operator": "greater_than",
-      "threshold": 1000,
-      "action": "ESCROW",
-      "score": 60
-    }
-  ]
+  "strictMode": true,
+  "escrowThreshold": 50,
+  "maxQuantity": 10
 }

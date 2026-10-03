@@ -2,17 +2,18 @@ import express, { Request, Response, NextFunction } from 'express';
 import { policyEngine } from './middleware/policyEngine';
 import { getAllHolds, resolveTransaction, storeHold } from './services/escrowService';
 import { authenticateAgent } from './middleware/authMiddleware';
-import { initDB } from './config/database';
 import { circuitBreakerMiddleware, recordFailure, resetBreaker } from './middleware/circuitBreaker';
+import { rateLimiter } from './middleware/rateLimiter';
+import { initDB } from './config/database';
 import path from 'path';
 import crypto from 'crypto';
+import fs from 'fs';
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
 const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL || 'https://graceful-canyon-46.webhook.cool';
-const DOWNSTREAM_PIPELINE_URL = 'https://n8n-or-gohighlevel-webhook-url-goes-here';
 
 async function dispatchSecurityAlert(assessment: any, payload: any, agent: any) {
   try {
@@ -81,13 +82,35 @@ app.get('/', (req: Request, res: Response) => {
   `);
 });
 
+// ============================================================================
+// DAY 21: DYNAMIC POLICY HOT-SWAPPING ENDPOINT
+// ============================================================================
+app.post('/ucp/v1/admin/policies', (req: Request, res: Response) => {
+  const newPolicies = req.body;
+  // FIXED PATH: Now properly points to the src folder
+  const policyPath = path.join(__dirname, '../src/config/policies.json');
+  
+  try {
+    fs.writeFileSync(policyPath, JSON.stringify(newPolicies, null, 2));
+    const auditHash = crypto.createHash('sha256').update(`POLICY_UPDATE_${Date.now()}_${JSON.stringify(newPolicies)}`).digest('hex');
+    console.log(`\n🔐 [Admin] Security Policies hot-swapped live! Audit Hash: ${auditHash}`);
+    res.json({ success: true, message: 'Policies updated successfully', auditHash });
+  } catch (err) {
+    console.error('File Write Error:', err);
+    res.status(500).json({ success: false, message: 'Failed to update policies.' });
+  }
+});
+
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.url === '/ucp/v1/escrow/active') return next(); 
   console.log(`\n📥 [${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
   next();
 });
 
-app.post('/api/checkout', authenticateAgent, circuitBreakerMiddleware, async (req: Request, res: Response) => {
+// ============================================================================
+// DAY 22: RATE LIMITER ADDED INTO THE MIDDLEWARE PIPELINE
+// ============================================================================
+app.post('/api/checkout', authenticateAgent, rateLimiter, circuitBreakerMiddleware, async (req: Request, res: Response) => {
   const payload = req.body;
   const agent = (req as any).agent;
   const assessment = policyEngine.evaluate(payload);
@@ -99,14 +122,10 @@ app.post('/api/checkout', authenticateAgent, circuitBreakerMiddleware, async (re
     console.log(`❌ [SECURITY INTERCEPT] Decision: ESCROW | ID: ${transactionId}`);
     
     await storeHold({ transactionId, payload: storedPayload, assessment, status: 'ESCROW_HOLD', createdAt: Date.now() });
-    
-    // Day 20: Record the failure to trip the breaker if it happens too often
     recordFailure(agent.name);
     await dispatchSecurityAlert(assessment, payload, agent);
   } else {
     console.log(`✅ [ALLOWED] Agent: ${agent.name} | Risk Score: ${assessment.score}`);
-    
-    // Day 20: Reset the breaker on a successful, safe transaction
     resetBreaker(agent.name);
   }
 
@@ -129,17 +148,12 @@ app.post('/ucp/v1/escrow/:action/:id', async (req: Request, res: Response) => {
   const hash = crypto.createHash('sha256').update(`${id}-${internalAction}-${Date.now()}`).digest('hex');
   console.log(`🛡️ Transaction ${id} successfully ${action}d. Audit Hash: ${hash}`);
 
-  if (internalAction === 'CLEAR') {
-    console.log(`🚀 [Egress] Webhook dispatched to downstream CRM/Pipeline automation!`);
-  }
-
   res.json({ success: true, auditHash: hash });
 });
 
-// Initialize SQLite then start server
 initDB().then(() => {
   app.listen(3000, () => {
     console.log('🚀 AIF Secured Gateway running on port 3000');
-    console.log('🔒 Day 20 Agent Circuit Breaker Active');
+    console.log('🔒 Day 21 Policy Hot-Swapping & Day 22 Rate Limiting Active');
   });
 });
